@@ -1,14 +1,26 @@
+# Environment variables and secrets
 .env
-.env.local
 .env.*
 !.env.example
 
+# Next.js
 node_modules/
 .next/
+out/
+
+# Python
 python-model/venv/
 __pycache__/
 *.pyc
 
-# Model weights and training files
+# Local uploads and test images
+public/uploads/
+python-model/test_images/
+
+# YOLO model weights and training outputs
 *.pt
 runs/
+weights/
+
+# Generated source maps
+public/sw.js.map

@@ -3,9 +3,11 @@ import mongoose from "mongoose";
 const wasteDumped = new mongoose.Schema({
     wasteNameByAi: {
         type: String,
+        default: "",
     },
     wasteType: {
         type: String,
+        default: "",
     },
     wastePoints: {
         type: Number,
@@ -16,13 +18,32 @@ const wasteDumped = new mongoose.Schema({
         default: false,
     },
 
+    // Scan history fields
+    imagePath: {
+        type: String,
+        default: "",
+    },
+    scanStatus: {
+        type: String,
+        enum: ["scanned", "disposed"],
+        default: "scanned",
+    },
+    confidence: {
+        type: Number,
+        default: 0,
+    },
+    detections: {
+        type: mongoose.Schema.Types.Mixed,
+        default: [],
+    },
+
     day: {
         type: Date,
         default: Date.now,
     },
     location: {
         type: String,
-        defeault: "Assam Downtown University, Guwahati, Assam, India",
+        default: "Assam Downtown University, Guwahati, Assam, India",
     },
     latitude: {
         type: Number,
@@ -31,12 +52,14 @@ const wasteDumped = new mongoose.Schema({
         type: Number,
     },
 });
+
 const couponSchema = new mongoose.Schema({
     service: String,
     discount: String,
     code: String,
     expiryDate: Date,
 });
+
 const userSchema = new mongoose.Schema({
     username: {
         type: String,
@@ -62,7 +85,8 @@ const userSchema = new mongoose.Schema({
     },
     profilePicture: {
         type: String,
-        default: "https://i.pinimg.com/564x/58/79/29/5879293da8bd698f308f19b15d3aba9a.jpg",
+        default:
+            "https://i.pinimg.com/564x/58/79/29/5879293da8bd698f308f19b15d3aba9a.jpg",
     },
     userDescription: {
         type: String,
@@ -95,6 +119,7 @@ const userSchema = new mongoose.Schema({
     verifyTokenExpiry: Date,
 });
 
-const User = mongoose.models.users || mongoose.model("users", userSchema);
+const User =
+    mongoose.models.users || mongoose.model("users", userSchema);
 
 export default User;

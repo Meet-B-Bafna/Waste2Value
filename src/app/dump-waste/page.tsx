@@ -1,310 +1,642 @@
 "use client";
+
 import React, { useEffect, useRef, useState } from "react";
-import { MoonLoader } from "react-spinners";
 import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from "@google/generative-ai";
-import { Coins, Scan, X } from "lucide-react";
-// import Image from "next/image";
+import { Coins, Scan, X, Camera, MapPin } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
-// import badge from "@/assets/badge.jpg";
 import SpinLoading from "@/components/loading/SpinLoading";
 import Toast from "@/utils/toast";
 
 const safetySettings = [
-    {
-        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
-    },
-    {
-        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
-    },
-    {
-        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
-    },
-    {
-        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
-    },
+    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
 ];
+
+interface Coupon {
+    id: number;
+    service: string;
+    discount: string;
+    code: string;
+}
 
 const Page: React.FC = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
-    const [photoData, setPhotoData] = useState<any | null>(null);
-    const [loading, setLoading] = useState<boolean>(false);
-    const [aiLoading, setaiLoading] = useState(false);
-    const [aiData, setAiData] = useState<any | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+
+    const [photoData, setPhotoData] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiData, setAiData] = useState<string | null>(null);
+    const [claimRewards, setClaimRewards] = useState(false);
+    const [disableCapture, setDisableCapture] = useState(false);
+    const [dumpLoading, setDumpLoading] = useState(false);
+    const [latitude, setLatitude] = useState<number | null>(null);
+    const [longitude, setLongitude] = useState<number | null>(null);
+    const [coupons, setCoupons] = useState<Coupon[]>([]);
+    const [disableClaimBtn, setDisableClaimBtn] = useState(false);
+    const [isDryWaste, setIsDryWaste] = useState("");
+    const [claimError, setClaimError] = useState(false);
+    const [cameraError, setCameraError] = useState("");
+
     const searchParams = useSearchParams();
+
     const recycle = searchParams.get("recycle");
     const wasteName = searchParams.get("wasteName");
     const wasteType = searchParams.get("wasteType");
     const material = searchParams.get("material");
     const totalwaste = searchParams.get("totalwaste");
     const dryWaste = searchParams.get("dryWaste");
-    const [claimRewards, setClaimRewards] = useState<boolean>(false);
-    const [disableCapture, setDisableCapture] = useState<boolean>(false);
-    const [dumpLoading, setDumpLoading] = useState<boolean>(false);
-    const [latitude, setLatitude] = useState<number | null>(null);
-    const [longitude, setLongitude] = useState<number | null>(null);
-    const [coupons, setCoupons] = useState<any[]>([]); // Added coupon state
-    const [disableClaimBtn, setdisableClaimBtn] = useState<boolean>(false);
-    const [isDryWaste, setIsDryWaste] = useState<any>("");
 
     useEffect(() => {
         const generateCouponCode = () => {
             const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            const length = 8;
-            let couponCode = "";
-            for (let i = 0; i < length; i++) {
-                couponCode += characters.charAt(Math.floor(Math.random() * characters.length));
+            let code = "";
+
+            for (let i = 0; i < 8; i++) {
+                code += characters.charAt(Math.floor(Math.random() * characters.length));
             }
-            return couponCode;
+
+            return code;
         };
 
-        // Generate dummy coupons
-        const services = ["Zomato", "Swiggy", "Uber Eats", "Amazon", "Netflix", "Starbucks", "Gym", "Spa", "Movie Theater", "Bookstore"];
-        const dummyCoupons = Array.from({ length: 200 }, (_, index) => ({
+        const services = [
+            "Zomato", "Swiggy", "Uber Eats", "Amazon", "Netflix",
+            "Starbucks", "Gym", "Spa", "Movie Theater", "Bookstore",
+        ];
+
+        const generated: Coupon[] = Array.from({ length: 10 }, (_, index) => ({
             id: index + 1,
             service: services[Math.floor(Math.random() * services.length)],
             discount: "Buy one, get one free on any item",
             code: generateCouponCode(),
         }));
 
-        setCoupons(dummyCoupons.slice(0, 1));
+        setCoupons(generated.slice(0, 1));
     }, []);
 
-    const startCamera = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-            if (videoRef.current) {
-                setLoading(false);
-                videoRef.current.srcObject = stream;
-            }
-        } catch (err) {
-            Toast.ErrorShowToast("Error accessing camera");
-            console.error("Error accessing camera:", err);
+    const stopCamera = () => {
+        streamRef.current?.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
         }
     };
 
-    const capturePhoto = () => {
-        if (videoRef.current) {
-            const video = videoRef.current;
-            const canvas = document.createElement("canvas");
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext("2d");
-            if (ctx) {
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const dataURL = canvas.toDataURL("image/jpeg");
-                setPhotoData(dataURL);
-                setDisableCapture(true);
+    const startCamera = async () => {
+        setLoading(true);
+        setCameraError("");
+
+        try {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                throw new Error("Camera access is not supported by this browser.");
             }
+
+            stopCamera();
+
+            let stream: MediaStream;
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        facingMode: { exact: "environment" },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                    },
+                });
+            } catch (rearCameraError) {
+                console.warn("Exact rear camera unavailable; trying fallback.", rearCameraError);
+
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        facingMode: { ideal: "environment" },
+                    },
+                });
+            }
+
+            streamRef.current = stream;
+
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                await videoRef.current.play();
+            } else {
+                stream.getTracks().forEach((track) => track.stop());
+                streamRef.current = null;
+            }
+        } catch (error) {
+            console.error("Error accessing camera:", error);
+            setCameraError("Unable to access the camera. Check browser permissions and try again.");
+            Toast.ErrorShowToast("Unable to access the camera.");
+        } finally {
+            setLoading(false);
         }
+    };
+
+    useEffect(() => {
+        void startCamera();
+
+        return () => {
+            streamRef.current?.getTracks().forEach((track) => track.stop());
+            streamRef.current = null;
+        };
+        // Start the camera when the page mounts.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        if (!navigator.geolocation) {
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                setLatitude(position.coords.latitude);
+                setLongitude(position.coords.longitude);
+            },
+            (error) => {
+                console.warn("Location unavailable:", error.message);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        );
+    }, []);
+
+    const capturePhoto = () => {
+        const video = videoRef.current;
+
+        if (!video || !video.videoWidth || !video.videoHeight) {
+            Toast.ErrorShowToast("Camera is not ready. Please try again.");
+            return;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        const context = canvas.getContext("2d");
+
+        if (!context) {
+            Toast.ErrorShowToast("Unable to capture photo.");
+            return;
+        }
+
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        setPhotoData(canvas.toDataURL("image/jpeg", 0.9));
+        setAiData(null);
+        setIsDryWaste("");
+        setDisableCapture(true);
+        setDisableClaimBtn(false);
+        setClaimError(false);
+
+        // Stop the camera after capture to free the device camera.
+        stopCamera();
+    };
+
+    const getDustBinType = async (imageData: string) => {
+        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+
+        if (!apiKey) {
+            throw new Error("Gemini API key is not configured.");
+        }
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({
+            model: "gemini-1.5-pro",
+            safetySettings,
+        });
+
+        const formatMatch = imageData.match(/^data:(image\/[\w+-]+);base64,/);
+
+        if (!formatMatch) {
+            throw new Error("Unsupported image format.");
+        }
+
+        const image = {
+            inlineData: {
+                data: imageData.replace(formatMatch[0], ""),
+                mimeType: formatMatch[1],
+            },
+        };
+
+        const result = await model.generateContent([
+            "Does this look like a dry waste dustbin? Respond with only true or false.",
+            image,
+        ]);
+
+        return result.response.text().trim().toLowerCase();
+    };
+
+    const scanImage = async (imageData: string) => {
+        setAiLoading(true);
+        setAiData(null);
+        setIsDryWaste("");
+
+        try {
+            const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+
+            if (!apiKey) {
+                throw new Error("Gemini API key is not configured.");
+            }
+
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const model = genAI.getGenerativeModel({
+                model: "gemini-1.5-pro",
+                safetySettings,
+            });
+
+            const formatMatch = imageData.match(/^data:(image\/[\w+-]+);base64,/);
+
+            if (!formatMatch) {
+                throw new Error("Unsupported image format.");
+            }
+
+            const image = {
+                inlineData: {
+                    data: imageData.replace(formatMatch[0], ""),
+                    mimeType: formatMatch[1],
+                },
+            };
+
+            const [binResult, dryWasteResult] = await Promise.all([
+                model.generateContent([
+                    "Does this look like a dustbin? Respond with only yes or no.",
+                    image,
+                ]),
+                getDustBinType(imageData),
+            ]);
+
+            setAiData(binResult.response.text().trim().toLowerCase());
+            setIsDryWaste(dryWasteResult);
+        } catch (error) {
+            console.error("Error scanning image:", error);
+            Toast.ErrorShowToast(
+                error instanceof Error ? error.message : "Error verifying dustbin."
+            );
+        } finally {
+            setAiLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (photoData) {
+            void scanImage(photoData);
+        }
+        // Scan only when a new photo is captured.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [photoData]);
+
+    const isCorrectDustbin =
+        aiData?.trim().toLowerCase() === "yes" &&
+        (isDryWaste === "true" || isDryWaste === "false") &&
+        (dryWaste?.trim().toLowerCase() === "true" ||
+            dryWaste?.trim().toLowerCase() === "false") &&
+        isDryWaste === dryWaste?.trim().toLowerCase();
+
+    const retakePhoto = async () => {
+        setPhotoData(null);
+        setAiData(null);
+        setIsDryWaste("");
+        setDisableCapture(false);
+        setDisableClaimBtn(false);
+        setClaimError(false);
+        await startCamera();
     };
 
     const claimPointsAndCoupon = async () => {
-        setdisableClaimBtn(true);
-        setClaimRewards(true);
+        if (disableClaimBtn || dumpLoading) return;
+
+        if (!wasteName || !wasteType || !recycle) {
+            Toast.ErrorShowToast("Waste details are missing.");
+            return;
+        }
+
+        if (!isCorrectDustbin) {
+            Toast.ErrorShowToast("Please verify the correct dustbin first.");
+            return;
+        }
+
+        if (coupons.length === 0) {
+            Toast.ErrorShowToast("Reward details are not ready.");
+            return;
+        }
+
         setDumpLoading(true);
+        setClaimError(false);
+
         try {
             const res = await fetch("/api/add-points", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
                 body: JSON.stringify({
-                    isRecyclable: recycle,
                     wasteNameByAi: wasteName,
-                    wasteType: wasteType,
-                    latitude: latitude!,
-                    longitude: longitude!,
-                    isRecyleable: recycle,
-                    wastepoints: recycle == "true" ? 12 : 5,
+                    wasteType,
+                    latitude,
+                    longitude,
+                    isRecyleable: recycle === "true",
+                    wastepoints: recycle === "true" ? 12 : 5,
                     service: coupons[0].service,
                     discount: coupons[0].discount,
                     CouponCode: coupons[0].code,
                 }),
             });
 
-            if (res.ok) {
-                const data = await res.json();
-                Toast.SuccessshowToast(`${recycle == "true" ? 12 : 5} Points credited `);
-                setDumpLoading(false);
-                console.log(data);
-            } else {
-                const data = await res.json();
-                Toast.ErrorShowToast(data.error || "Error claiming points");
-                console.error(data);
+            const data = await res.json();
+
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || "Error claiming rewards.");
             }
-        } catch (err) {
-            Toast.ErrorShowToast("Error claiming points");
-            console.error("Error claiming points:", err);
+
+            setDisableClaimBtn(true);
+            setClaimRewards(true);
+
+            Toast.SuccessShowToast(
+                `${data.pointsCredited ?? (recycle === "true" ? 12 : 5)} points credited`
+            );
+
+            console.log("Waste disposal recorded:", data);
+        } catch (error) {
+            console.error("Error claiming points:", error);
+            setClaimError(true);
+
+            Toast.ErrorShowToast(
+                error instanceof Error ? error.message : "Error claiming rewards."
+            );
         } finally {
             setDumpLoading(false);
         }
     };
 
-    const scanImage = async () => {
-        try {
-            setaiLoading(true);
-            const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY!);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro", safetySettings: safetySettings });
-            const prompt = "Does this look like a dustbin to you respond with yes or no  ";
-            const formatMatch = photoData.match(/^data:(image\/(\w+));base64,/);
-            if (!formatMatch) {
-                console.error("Unsupported image format");
-                Toast.ErrorShowToast("Unsupported image format");
-                return;
-            }
-
-            const image = {
-                inlineData: {
-                    data: photoData.replace(formatMatch[0], ""),
-                    mimeType: "image/jpeg",
-                },
-            };
-
-            const result = await model.generateContent([prompt, image]);
-            getDustBinType();
-            setAiData(result.response.text());
-        } catch (err) {
-            console.error("Error scanning image:", err);
-            Toast.ErrorShowToast("Error getting dustbin type");
-        }
-    };
-
-    const getDustBinType = async () => {
-        try {
-            const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY!);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro", safetySettings: safetySettings });
-            const prompt = "Does this look like a dry waste dustbin to you respond with true or false  ";
-            const formatMatch = photoData.match(/^data:(image\/(\w+));base64,/);
-            if (!formatMatch) {
-                console.error("Unsupported image format");
-                Toast.ErrorShowToast("Unsupported image format");
-                return;
-            }
-
-            const image = {
-                inlineData: {
-                    data: photoData.replace(formatMatch[0], ""),
-                    mimeType: "image/jpeg",
-                },
-            };
-
-            const result = await model.generateContent([prompt, image]);
-            setaiLoading(false);
-            setIsDryWaste(result.response.text());
-        } catch (err) {
-            console.error("Error scanning image:", err);
-            Toast.ErrorShowToast("Error scanning image");
-        } finally {
-            setaiLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        if (photoData) {
-            scanImage();
-        }
-    }, [photoData]);
-
-    useEffect(() => {
-        startCamera();
-    }, []);
-
-    useEffect(() => {
-        const getLocation = () => {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    setLatitude(position.coords.latitude);
-                    setLongitude(position.coords.longitude);
-                },
-                (error) => {
-                    console.error("Error getting location:", error);
-                    Toast.ErrorShowToast("Error getting location");
-                },
-            );
-        };
-
-        getLocation();
-    }, []);
-
     return (
-        <div className="flex relative flex-col  mt-4 w-full mb-40">
-            <h1 className=" flex items-start justify-start mb-7 text-3xl font-bold text-start">Dump Waste</h1>
-            <div>
-                {loading ? <div className="w-full rounded-lg relative animate-pulse bg-black/80" style={{ height: "400px", borderRadius: "50px" }} /> : <video ref={videoRef} autoPlay muted className=" w-full rounded-lg relative h-96" />}
-                {!disableCapture && (
-                    <button onClick={capturePhoto} className=" bg-green-600 w-16 h-16 m-auto rounded-full  flex gap-3 items-center text-center justify-center  text-3xl font-bold text-white mt-7  p-4">
-                        <div className="flex flex-col gap-3">
-                            <Scan size={40} />
+        <main className="min-h-screen bg-gradient-to-b from-green-50 via-white to-white px-4 pb-28 pt-6">
+            <div className="mx-auto w-full max-w-3xl">
+                <header className="mb-6">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-100 text-green-800">
+                            <Camera size={25} />
                         </div>
-                    </button>
-                )}
-            </div>
-            {aiLoading ? (
-                <div className=" bg-black/80 w-full min-h-screen fixed left-0 right-0 top-0">
-                    <div className="flex justify-center items-center min-h-screen">
-                        <MoonLoader color="#fff" size={90} />
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
+                                Dump Waste
+                            </h1>
+                            <p className="mt-1 text-sm text-gray-500">
+                                Capture the dustbin to verify your disposal.
+                            </p>
+                        </div>
                     </div>
-                </div>
-            ) : (
-                <>
-                    {aiData && (
-                        <div className="  bg-black/5 shadow-lg w-full mt-12 mb-28 rounded-2xl border-2 border-black/10">
-                            <div className="flex flex-col gap-4  p-4">
-                                <h1 className="text-2xl  font-bold">Is Dustbin ? {aiData}</h1>
-                                <h1 className=" text-2xl font-bold">IsDry Waste dustbin ? {isDryWaste}</h1>
-                                <h1 className=" text-xl opacity-60 font-bold uppercase">isRecycleItem = {recycle}</h1>
-                                <h1>wasteName : {wasteName}</h1>
-                                <h1>Waste Type {wasteType}</h1>
-                                <h1>Material : {material}</h1>
-                                <h1>Total Waste : {totalwaste}</h1>
-                                <h1>DryWaste : {dryWaste}</h1>
-                                {aiData.trim().toLowerCase() === "yes" && isDryWaste.trim().toLowerCase() === dryWaste?.trim().toLowerCase() ? (
-                                    <button onClick={claimPointsAndCoupon} className={`flex justify-center items-center gap-3 ${!disableClaimBtn ? "bg-green-600" : "bg-black/40 "}  text-white p-5 rounded-lg`}>
-                                        <Coins />
-                                        {!disableClaimBtn ? "Claim rewards" : "Claimed"}
-                                    </button>
-                                ) : (
-                                    <button className=" flex justify-center items-center gap-3 bg-red-600 text-white p-5 rounded-lg">
-                                        <Coins />
-                                        Wrong dustbin for {dryWaste?.trim().toLowerCase() ? "Dry Waste" : "Wet Waste"}{" "}
-                                    </button>
-                                )}
+                </header>
 
-                                <div className={`absolute bg-white shadow-md shadow-black/10 border-2  border-black/10 z-50 w-[90%] m-auto right-0 left-0 h-96 rounded-lg top-16 ${claimRewards ? "scale-100" : "scale-0"} duration-200`}>
-                                    <div className="flex p-4 text-white justify-end items-end">
-                                        <X size={40} onClick={() => setClaimRewards(false)} className=" text-green-500" />
+                {/* Camera card */}
+                <section className="mx-auto w-full max-w-xl overflow-hidden rounded-3xl border border-gray-200 bg-white p-3 shadow-lg">
+                    <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-gray-950">
+                        {!photoData && (
+                            <>
+                                <video
+                                    ref={videoRef}
+                                    autoPlay
+                                    muted
+                                    playsInline
+                                    className="absolute inset-0 h-full w-full object-cover"
+                                />
+
+                                {loading && (
+                                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
+                                        <SpinLoading />
                                     </div>
-                                    {dumpLoading ? (
-                                        <div className="flex h-full justify-center items-center">
-                                            <SpinLoading />
-                                        </div>
-                                    ) : (
-                                        <div className="flex justify-center items-center  flex-col">
-                                            {/* <Image src={badge} alt="bade" width={100} height={10} className=" w-32 h-32" /> */}
-                                            <h1 className=" text-2xl font-bold capitalize">Congratulations</h1>
-                                            <h1 className=" text-3xl font-bold">You won: </h1>
-                                            <div className="flex flex-col">
-                                                {coupons.slice(0, 2).map((coupon, index) => (
-                                                    <div className="flex flex-col   justify-center items-center w-full" key={index}>
-                                                        <span className=" text-xl font-bold"> {coupon.service}</span>
-                                                        <span className=" bg-black/40 p-4 text-white w-full text-sm rounded-xl"> {coupon.code}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                )}
+                            </>
+                        )}
+
+                        {photoData && (
+                            <img
+                                src={photoData}
+                                alt="Captured dustbin"
+                                className="absolute inset-0 h-full w-full object-contain"
+                            />
+                        )}
+
+                        {!loading && cameraError && !photoData && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-5 text-center text-white">
+                                <Camera size={36} />
+                                <p className="text-sm">{cameraError}</p>
+                                <button
+                                    type="button"
+                                    onClick={() => void startCamera()}
+                                    className="rounded-xl bg-white px-4 py-2 font-semibold text-gray-900"
+                                >
+                                    Retry camera
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="px-2 pb-2 pt-4 text-center">
+                        {!photoData ? (
+                            <>
+                                <p className="text-sm text-gray-600">
+                                    Point the rear camera at the waste bin.
+                                </p>
+
+                                <button
+                                    type="button"
+                                    onClick={capturePhoto}
+                                    disabled={loading || Boolean(cameraError)}
+                                    className="mt-4 flex w-full items-center justify-center gap-3 rounded-xl bg-green-700 px-5 py-4 font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <Scan size={22} />
+                                    Capture & Verify Disposal
+                                </button>
+                            </>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => void retakePhoto()}
+                                disabled={aiLoading}
+                                className="flex w-full items-center justify-center gap-3 rounded-xl border border-green-700 px-5 py-4 font-semibold text-green-800 transition hover:bg-green-50 disabled:opacity-50"
+                            >
+                                <Camera size={22} />
+                                Retake Photo
+                            </button>
+                        )}
+
+                        {latitude !== null && longitude !== null && (
+                            <p className="mt-3 flex items-center justify-center gap-1 text-xs text-gray-500">
+                                <MapPin size={13} />
+                                Location captured
+                            </p>
+                        )}
+                    </div>
+                </section>
+
+                {/* Gemini loading */}
+                {aiLoading && (
+                    <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-black/70">
+                        <div className="flex flex-col items-center gap-4 text-white">
+                            <SpinLoading />
+                            <p className="text-sm">Verifying dustbin with AI...</p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Verification result */}
+                {!aiLoading && aiData && (
+                    <section className="mx-auto mb-8 mt-6 w-full max-w-xl rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+                        <h2 className="text-xl font-bold text-gray-900">
+                            Disposal Verification
+                        </h2>
+
+                        <div className="mt-4 space-y-3 text-sm">
+                            <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                                <span className="text-gray-500">Is this a dustbin?</span>
+                                <span className="font-semibold capitalize text-gray-900">
+                                    {aiData}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                                <span className="text-gray-500">Dry waste bin?</span>
+                                <span className="font-semibold capitalize text-gray-900">
+                                    {isDryWaste}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                                <span className="text-gray-500">Recyclable</span>
+                                <span className="font-semibold capitalize text-gray-900">
+                                    {recycle}
+                                </span>
+                            </div>
+
+                            <div>
+                                <p className="text-gray-500">Waste name</p>
+                                <p className="mt-1 font-semibold capitalize text-gray-900">
+                                    {wasteName || "Not specified"}
+                                </p>
+                            </div>
+
+                            <div>
+                                <p className="text-gray-500">Waste type</p>
+                                <p className="mt-1 font-semibold text-gray-900">
+                                    {wasteType || "Not specified"}
+                                </p>
+                            </div>
+
+                            <div>
+                                <p className="text-gray-500">Material</p>
+                                <p className="mt-1 font-semibold text-gray-900">
+                                    {material || "Not specified"}
+                                </p>
+                            </div>
+
+                            <div>
+                                <p className="text-gray-500">Total waste</p>
+                                <p className="mt-1 font-semibold text-gray-900">
+                                    {totalwaste || "Not specified"}
+                                </p>
+                            </div>
+
+                            <div>
+                                <p className="text-gray-500">Expected bin category</p>
+                                <p className="mt-1 font-semibold text-gray-900">
+                                    {dryWaste === "true" ? "Dry waste" : dryWaste === "false" ? "Wet waste" : "Not specified"}
+                                </p>
                             </div>
                         </div>
-                    )}
-                </>
-            )}
-        </div>
+
+                        {isCorrectDustbin ? (
+                            <button
+                                type="button"
+                                onClick={claimPointsAndCoupon}
+                                disabled={disableClaimBtn || dumpLoading}
+                                className="mt-6 flex w-full items-center justify-center gap-3 rounded-xl bg-green-700 p-4 font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:bg-gray-400"
+                            >
+                                <Coins size={20} />
+                                {dumpLoading
+                                    ? "Processing..."
+                                    : disableClaimBtn
+                                      ? "Rewards Claimed"
+                                      : `Claim ${recycle === "true" ? 12 : 5} Points & Reward`}
+                            </button>
+                        ) : (
+                            <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-center text-sm font-medium text-red-700">
+                                The bin verification did not match the expected waste category. Please retake the photo and try again.
+                            </div>
+                        )}
+
+                        {claimError && (
+                            <button
+                                type="button"
+                                onClick={claimPointsAndCoupon}
+                                disabled={dumpLoading || disableClaimBtn}
+                                className="mt-3 w-full rounded-xl border border-green-700 p-3 font-semibold text-green-800 disabled:opacity-50"
+                            >
+                                Retry Claim
+                            </button>
+                        )}
+                    </section>
+                )}
+
+                {/* Reward modal */}
+                {claimRewards && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+                        <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl">
+                            <div className="flex items-center justify-between">
+                                <h2 className="text-xl font-bold text-gray-900">
+                                    Reward Claimed
+                                </h2>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setClaimRewards(false)}
+                                    aria-label="Close reward window"
+                                    className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+                                >
+                                    <X size={24} />
+                                </button>
+                            </div>
+
+                            <div className="mt-6 text-center">
+                                <p className="text-sm text-gray-500">
+                                    Congratulations! Your disposal has been recorded.
+                                </p>
+
+                                <p className="mt-3 text-3xl font-bold text-green-700">
+                                    +{recycle === "true" ? 12 : 5} points
+                                </p>
+
+                                {coupons.slice(0, 1).map((coupon) => (
+                                    <div key={coupon.id} className="mt-6 rounded-2xl bg-green-50 p-4">
+                                        <p className="text-sm text-gray-600">Your reward</p>
+                                        <p className="mt-1 text-xl font-bold text-gray-900">
+                                            {coupon.service}
+                                        </p>
+                                        <p className="mt-3 text-sm text-gray-600">
+                                            {coupon.discount}
+                                        </p>
+                                        <p className="mt-3 rounded-xl border border-dashed border-green-700 bg-white p-3 font-mono text-lg font-bold tracking-widest text-green-800">
+                                            {coupon.code}
+                                        </p>
+                                    </div>
+                                ))}
+
+                                <button
+                                    type="button"
+                                    onClick={() => setClaimRewards(false)}
+                                    className="mt-6 w-full rounded-xl bg-green-700 px-4 py-3 font-semibold text-white hover:bg-green-800"
+                                >
+                                    Done
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </main>
     );
 };
 
