@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { ClockLoader } from "react-spinners";
 import axios from "axios";
 import {
@@ -18,8 +18,29 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { stateandcity } from "@/assets/StateList";
-import { Error } from "@/types/ErrorTypes";
 import Toast from "@/utils/toast";
+
+const DEFAULT_STATE = "Select State";
+const DEFAULT_CITY = "select city";
+const MIN_PASSWORD_LENGTH = 8;
+
+type StateCityMap = Record<string, string[]>;
+const stateCityMap = stateandcity as StateCityMap;
+
+// Safely pull a readable message out of any thrown error
+const getErrorMessage = (error: unknown): string => {
+  if (axios.isAxiosError(error)) {
+    return (
+      (error.response?.data as { error?: string; message?: string } | undefined)
+        ?.error ||
+      (error.response?.data as { message?: string } | undefined)?.message ||
+      error.message ||
+      "Something went wrong"
+    );
+  }
+  if (error instanceof Error) return error.message;
+  return "Something went wrong";
+};
 
 const Page = () => {
   const router = useRouter();
@@ -33,100 +54,107 @@ const Page = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [selectedState, setSelectedState] = useState("Select State");
-  const [citySelected, setCitySelected] = useState("select city");
+  const [selectedState, setSelectedState] = useState(DEFAULT_STATE);
+  const [citySelected, setCitySelected] = useState(DEFAULT_CITY);
   const [cities, setCities] = useState<string[]>(
-    stateandcity["Select State"]
+    stateCityMap[DEFAULT_STATE] ?? [DEFAULT_CITY]
   );
+
+  const stateOptions = useMemo(() => Object.keys(stateCityMap), []);
 
   const passwordMismatch =
     confirmPassword.length > 0 && password !== confirmPassword;
 
-  const passwordValid = password.length >= 8;
+  const passwordValid = password.length >= MIN_PASSWORD_LENGTH;
 
   const formValid =
     userName.trim() !== "" &&
     email.trim() !== "" &&
-    selectedState !== "Select State" &&
-    citySelected !== "select city" &&
+    selectedState !== DEFAULT_STATE &&
+    citySelected !== "" &&
+    citySelected !== DEFAULT_CITY &&
     passwordValid &&
     password === confirmPassword;
 
-  const handleStateChange = (
-    event: React.ChangeEvent<HTMLSelectElement>
-  ) => {
+  const handleStateChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const state = event.target.value;
 
     setSelectedState(state);
 
-    const stateCities =
-      stateandcity[state as keyof typeof stateandcity] || [];
+    const stateCities = stateCityMap[state] ?? [DEFAULT_CITY];
 
     setCities(stateCities);
-    setCitySelected(stateCities[0] || "select city");
+    setCitySelected(stateCities[0] || DEFAULT_CITY);
   };
 
-  const handleRegister = async (
-    e: React.FormEvent<HTMLFormElement>
-  ) => {
+  const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    // Prevent double submission
+    if (loading) return;
+
     if (!userName.trim()) {
-      return Toast.ErrorShowToast("Please enter your username");
+      Toast.ErrorShowToast("Please enter your username");
+      return;
     }
 
     if (!email.trim()) {
-      return Toast.ErrorShowToast("Please enter your email");
+      Toast.ErrorShowToast("Please enter your email");
+      return;
     }
 
-    if (selectedState === "Select State") {
-      return Toast.ErrorShowToast("Please select your state");
+    if (selectedState === DEFAULT_STATE) {
+      Toast.ErrorShowToast("Please select your state");
+      return;
     }
 
-    if (!citySelected || citySelected === "select city") {
-      return Toast.ErrorShowToast("Please select your city");
+    if (!citySelected || citySelected === DEFAULT_CITY) {
+      Toast.ErrorShowToast("Please select your city");
+      return;
     }
 
-    if (password.length < 8) {
-      return Toast.ErrorShowToast(
-        "Password should have at least 8 characters"
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      Toast.ErrorShowToast(
+        `Password should have at least ${MIN_PASSWORD_LENGTH} characters`
       );
+      return;
     }
 
     if (password !== confirmPassword) {
-      return Toast.ErrorShowToast("Passwords didn't match");
+      Toast.ErrorShowToast("Passwords didn't match");
+      return;
     }
+
+    const trimmedEmail = email.trim().toLowerCase();
 
     try {
       setLoading(true);
 
-      const UserData = {
+      const userData = {
         username: userName.trim(),
-        email: email.trim(),
+        email: trimmedEmail,
         password,
         state: selectedState,
         city: citySelected,
       };
 
-      const res = await axios.post("/api/auth/register", UserData);
+      const res = await axios.post("/api/auth/register", userData);
 
       if (res?.data?.verified) {
-        Toast.SuccessshowToast("Account created! You can log in now.");
+        Toast.SuccessShowToast("Account created! You can log in now.");
       } else {
-        Toast.SuccessshowToast(
-          `Email sent to ${email}, please verify`
+        Toast.SuccessShowToast(
+          `Registration successful. ${
+            res?.data?.message ||
+            `Check ${trimmedEmail} for verification instructions.`
+          }`
         );
       }
 
       router.push("/login");
     } catch (error: unknown) {
-      const apiError = error as Error;
-
-      console.error("Registration error:", apiError);
-
-      Toast.ErrorShowToast(
-        apiError?.response?.data?.error || "Something went wrong"
-      );
+      console.error("Registration error:", error);
+      Toast.ErrorShowToast(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -135,8 +163,7 @@ const Page = () => {
   const inputClass =
     "w-full bg-transparent py-3 text-sm text-gray-800 outline-none placeholder:text-gray-400";
 
-  const labelClass =
-    "mb-2 block text-sm font-semibold text-gray-700";
+  const labelClass = "mb-2 block text-sm font-semibold text-gray-700";
 
   const fieldClass =
     "flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 transition-all duration-200 focus-within:border-green-600 focus-within:ring-4 focus-within:ring-green-600/10";
@@ -144,7 +171,6 @@ const Page = () => {
   return (
     <main className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 px-4 py-6 sm:px-6">
       <div className="mx-auto max-w-6xl">
-        {/* Back button */}
         <Link
           href="/login"
           className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold text-gray-600 transition hover:bg-green-100 hover:text-green-800"
@@ -154,7 +180,6 @@ const Page = () => {
         </Link>
 
         <section className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-3xl border border-green-100 bg-white shadow-xl shadow-green-900/5 lg:grid-cols-2">
-          {/* Left branding panel */}
           <div className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-green-800 via-green-700 to-emerald-600 p-10 text-white lg:flex">
             <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full border border-white/10" />
             <div className="absolute -bottom-24 -left-20 h-72 w-72 rounded-full border border-white/10" />
@@ -188,8 +213,8 @@ const Page = () => {
                 </h2>
 
                 <p className="mt-5 max-w-sm text-base leading-7 text-green-100">
-                  Start your sustainability journey. Make smarter
-                  waste choices and turn everyday actions into positive
+                  Start your sustainability journey. Make smarter waste
+                  choices and turn everyday actions into positive
                   environmental impact.
                 </p>
               </div>
@@ -210,9 +235,7 @@ const Page = () => {
             </div>
           </div>
 
-          {/* Registration form */}
           <div className="px-5 py-8 sm:px-10 sm:py-10 lg:px-12">
-            {/* Mobile branding */}
             <div className="mb-7 flex items-center gap-3 lg:hidden">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 text-green-800">
                 <Recycle size={25} />
@@ -247,17 +270,13 @@ const Page = () => {
               className="flex flex-col gap-5"
               onSubmit={handleRegister}
             >
-              {/* Username */}
               <div>
                 <label htmlFor="username" className={labelClass}>
                   Username
                 </label>
 
                 <div className={fieldClass}>
-                  <UserRound
-                    size={19}
-                    className="shrink-0 text-gray-400"
-                  />
+                  <UserRound size={19} className="shrink-0 text-gray-400" />
 
                   <input
                     id="username"
@@ -273,17 +292,13 @@ const Page = () => {
                 </div>
               </div>
 
-              {/* Email */}
               <div>
                 <label htmlFor="email" className={labelClass}>
                   Email address
                 </label>
 
                 <div className={fieldClass}>
-                  <Mail
-                    size={19}
-                    className="shrink-0 text-gray-400"
-                  />
+                  <Mail size={19} className="shrink-0 text-gray-400" />
 
                   <input
                     id="email"
@@ -299,7 +314,6 @@ const Page = () => {
                 </div>
               </div>
 
-              {/* State and city */}
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div>
                   <label htmlFor="state" className={labelClass}>
@@ -307,10 +321,7 @@ const Page = () => {
                   </label>
 
                   <div className={fieldClass}>
-                    <MapPin
-                      size={18}
-                      className="shrink-0 text-gray-400"
-                    />
+                    <MapPin size={18} className="shrink-0 text-gray-400" />
 
                     <select
                       id="state"
@@ -320,7 +331,7 @@ const Page = () => {
                       className={`${inputClass} cursor-pointer`}
                       required
                     >
-                      {Object.keys(stateandcity).map((state) => (
+                      {stateOptions.map((state) => (
                         <option value={state} key={state}>
                           {state}
                         </option>
@@ -335,10 +346,7 @@ const Page = () => {
                   </label>
 
                   <div className={fieldClass}>
-                    <MapPin
-                      size={18}
-                      className="shrink-0 text-gray-400"
-                    />
+                    <MapPin size={18} className="shrink-0 text-gray-400" />
 
                     <select
                       id="city"
@@ -358,17 +366,13 @@ const Page = () => {
                 </div>
               </div>
 
-              {/* Password */}
               <div>
                 <label htmlFor="password" className={labelClass}>
                   Password
                 </label>
 
                 <div className={fieldClass}>
-                  <LockKeyhole
-                    size={19}
-                    className="shrink-0 text-gray-400"
-                  />
+                  <LockKeyhole size={19} className="shrink-0 text-gray-400" />
 
                   <input
                     id="password"
@@ -379,7 +383,7 @@ const Page = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className={inputClass}
-                    minLength={8}
+                    minLength={MIN_PASSWORD_LENGTH}
                     required
                   />
 
@@ -391,11 +395,7 @@ const Page = () => {
                       showPassword ? "Hide password" : "Show password"
                     }
                   >
-                    {showPassword ? (
-                      <EyeOff size={19} />
-                    ) : (
-                      <Eye size={19} />
-                    )}
+                    {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
                   </button>
                 </div>
 
@@ -412,12 +412,8 @@ const Page = () => {
                 )}
               </div>
 
-              {/* Confirm password */}
               <div>
-                <label
-                  htmlFor="confirmPassword"
-                  className={labelClass}
-                >
+                <label htmlFor="confirmPassword" className={labelClass}>
                   Confirm password
                 </label>
 
@@ -428,10 +424,7 @@ const Page = () => {
                       : "border-gray-200 focus-within:border-green-600 focus-within:ring-green-600/10"
                   }`}
                 >
-                  <LockKeyhole
-                    size={19}
-                    className="shrink-0 text-gray-400"
-                  />
+                  <LockKeyhole size={19} className="shrink-0 text-gray-400" />
 
                   <input
                     id="confirmPassword"
@@ -447,9 +440,7 @@ const Page = () => {
 
                   <button
                     type="button"
-                    onClick={() =>
-                      setShowConfirmPassword((prev) => !prev)
-                    }
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
                     className="shrink-0 text-gray-400 transition hover:text-green-700"
                     aria-label={
                       showConfirmPassword
@@ -472,7 +463,6 @@ const Page = () => {
                 )}
               </div>
 
-              {/* Register button */}
               <button
                 type="submit"
                 disabled={!formValid || loading}

@@ -93,7 +93,7 @@ const Page = () => {
         try {
             await axios.get("/api/auth/logout");
 
-            Toast.SuccessshowToast("Logged out successfully");
+            Toast.SuccessShowToast("Logged out successfully");
             router.replace("/login");
             router.refresh();
         } catch (error) {

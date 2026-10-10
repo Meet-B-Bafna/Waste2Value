@@ -40,7 +40,7 @@ const Page = () => {
                 password,
             });
 
-            Toast.SuccessshowToast(
+            Toast.SuccessShowToast(
                 response?.data?.message ||
                     "Login successful"
             );
