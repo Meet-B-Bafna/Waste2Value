@@ -57,10 +57,23 @@ const Page: React.FC = () => {
                 video: { facingMode: "environment" },
             });
 
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                await videoRef.current.play();
-                setCameraOn(true);
+            const video = videoRef.current;
+
+            if (video) {
+                video.srcObject = stream;
+
+                try {
+                    await video.play();
+                    setCameraOn(true);
+                } catch (error) {
+                    stream.getTracks().forEach((track) => track.stop());
+
+                    if (video.srcObject === stream) {
+                        video.srcObject = null;
+                    }
+
+                    throw error;
+                }
             } else {
                 stream.getTracks().forEach((track) => track.stop());
             }
@@ -292,65 +305,69 @@ const Page: React.FC = () => {
     }, []);
 
     return (
-        <main className="min-h-screen w-full bg-[#f5f8f2] text-[#193b2a]">
+        // pb-32 leaves room for the fixed bottom nav + the raised Scan button
+        <main className="min-h-screen w-full bg-[#f5f8f2] pb-32 text-[#193b2a]">
             <header className="w-full border-b border-emerald-100 bg-white">
-                <div className="flex w-full items-center justify-between gap-4 px-4 py-5 sm:px-8 lg:px-12 xl:px-16">
+                <div className="flex w-full items-center justify-between gap-3 px-4 py-4">
                     <Link
                         href="/"
-                        className="flex items-center gap-3"
+                        className="flex min-w-0 items-center gap-3"
                         aria-label="Waste2Value home"
                     >
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-700 text-white shadow-md shadow-emerald-900/10">
-                            <Leaf size={27} />
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-700 text-white shadow-md shadow-emerald-900/10">
+                            <Leaf size={24} />
                         </div>
 
-                        <div>
-                            <p className="text-xl font-extrabold tracking-tight sm:text-2xl">
+                        <div className="min-w-0">
+                            <p className="text-xl font-extrabold tracking-tight">
                                 Waste<span className="text-emerald-600">2</span>
                                 Value
                             </p>
-                            <p className="text-xs font-medium tracking-wide text-gray-500">
+                            <p className="truncate text-[10px] font-medium tracking-wide text-gray-500">
                                 SMARTER WASTE. GREENER FUTURE.
                             </p>
                         </div>
                     </Link>
 
-                    <div className="hidden items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 sm:flex">
+                    <div className="hidden shrink-0 items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 min-[480px]:flex">
                         <span className="h-2 w-2 rounded-full bg-emerald-500" />
                         AI Waste Detection
                     </div>
                 </div>
             </header>
 
-            <div className="w-full max-w-none px-4 py-8 sm:px-8 sm:py-12 lg:px-12 xl:px-16 2xl:px-20">
-                <section className="mb-9">
+            <div className="w-full px-4 py-6">
+                <section className="mb-7">
                     <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800">
                         <Sprout size={17} />
                         Make Every Item Count
                     </div>
 
-                    <h1 className="max-w-4xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
+                    <h1 className="text-4xl font-extrabold leading-tight tracking-tight">
                         Give your waste a{" "}
                         <span className="text-emerald-700">
                             second chance.
                         </span>
                     </h1>
 
-                    <p className="mt-4 max-w-3xl text-base leading-7 text-gray-600 sm:text-lg">
+                    <p className="mt-4 text-base leading-7 text-gray-600">
                         Scan an item to identify waste materials with AI.
                         Take a step towards responsible segregation and a
                         cleaner environment.
                     </p>
                 </section>
 
-                <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {/* Single column: stops text being squeezed/clipped in narrow layouts */}
+                <section className="mb-8 grid grid-cols-1 gap-4">
                     <div className="flex items-center gap-4 rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
                             <ScanLine size={24} />
                         </div>
-                        <div>
-                            <h2 className="font-bold">AI-Powered Scanning</h2>
-                            <p className="mt-1 text-sm text-gray-500">
+                        <div className="min-w-0">
+                            <h2 className="break-words font-bold">
+                                AI-Powered Scanning
+                            </h2>
+                            <p className="mt-1 break-words text-sm text-gray-500">
                                 Identify visible waste items
                             </p>
                         </div>
@@ -360,9 +377,11 @@ const Page: React.FC = () => {
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-lime-50 text-lime-700">
                             <Recycle size={24} />
                         </div>
-                        <div>
-                            <h2 className="font-bold">Better Segregation</h2>
-                            <p className="mt-1 text-sm text-gray-500">
+                        <div className="min-w-0">
+                            <h2 className="break-words font-bold">
+                                Better Segregation
+                            </h2>
+                            <p className="mt-1 break-words text-sm text-gray-500">
                                 Understand detected materials
                             </p>
                         </div>
@@ -372,19 +391,21 @@ const Page: React.FC = () => {
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
                             <ShieldCheck size={24} />
                         </div>
-                        <div>
-                            <h2 className="font-bold">Responsible Disposal</h2>
-                            <p className="mt-1 text-sm text-gray-500">
+                        <div className="min-w-0">
+                            <h2 className="break-words font-bold">
+                                Responsible Disposal
+                            </h2>
+                            <p className="mt-1 break-words text-sm text-gray-500">
                                 Check categories before disposal
                             </p>
                         </div>
                     </div>
                 </section>
 
-                <section className="grid w-full grid-cols-1 items-start gap-7 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                <section className="grid w-full grid-cols-1 items-start gap-6">
                     <div className="min-w-0 overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-sm">
-                        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-5 sm:px-7">
-                            <div>
+                        <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-5">
+                            <div className="min-w-0">
                                 <h2 className="text-xl font-bold">
                                     Waste Scanner
                                 </h2>
@@ -392,13 +413,13 @@ const Page: React.FC = () => {
                                     Capture an image or upload a photo
                                 </p>
                             </div>
-                            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
                                 <Camera size={23} />
                             </div>
                         </div>
 
-                        <div className="p-4 sm:p-7">
-                            <div className="relative flex min-h-[280px] items-center justify-center overflow-hidden rounded-2xl bg-[#10291d] sm:min-h-[390px] lg:min-h-[440px]">
+                        <div className="p-4">
+                            <div className="relative flex min-h-[280px] items-center justify-center overflow-hidden rounded-2xl bg-[#10291d]">
                                 {photoData ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img
@@ -413,7 +434,7 @@ const Page: React.FC = () => {
                                             autoPlay
                                             muted
                                             playsInline
-                                            className={`h-full min-h-[280px] max-h-[500px] w-full object-cover sm:min-h-[390px] ${
+                                            className={`h-full min-h-[280px] max-h-[500px] w-full object-cover ${
                                                 cameraOn ? "" : "hidden"
                                             }`}
                                         />
@@ -453,7 +474,7 @@ const Page: React.FC = () => {
                                 )}
                             </div>
 
-                            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div className="mt-5 grid grid-cols-1 gap-3">
                                 <button
                                     type="button"
                                     onClick={capturePhoto}
@@ -507,12 +528,12 @@ const Page: React.FC = () => {
                     </div>
 
                     <div className="min-w-0 overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-sm">
-                        <div className="border-b border-gray-100 px-5 py-5 sm:px-7">
+                        <div className="border-b border-gray-100 px-5 py-5">
                             <div className="flex items-center gap-3">
-                                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
                                     <Recycle size={24} />
                                 </div>
-                                <div>
+                                <div className="min-w-0">
                                     <h2 className="text-xl font-bold">
                                         Scan Results
                                     </h2>
@@ -523,7 +544,7 @@ const Page: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="p-5 sm:p-7">
+                        <div className="p-5">
                             {aiLoading ? (
                                 <div className="flex min-h-[320px] flex-col items-center justify-center text-center">
                                     <MoonLoader
@@ -696,21 +717,21 @@ const Page: React.FC = () => {
                     </div>
                 </section>
 
-                <footer className="mt-10 w-full rounded-3xl bg-[#173d2b] px-6 py-10 text-center text-white sm:px-12 lg:px-20">
+                <footer className="mt-10 w-full rounded-3xl bg-[#173d2b] px-6 py-10 text-center text-white">
                     <div className="flex w-full flex-col items-center justify-center">
                         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/10">
                             <Sprout size={34} />
                         </div>
-                        <h2 className="mt-5 text-2xl font-bold sm:text-3xl lg:text-4xl">
+                        <h2 className="mt-5 text-2xl font-bold">
                             Scan Smart. Segregate Better.
                         </h2>
-                        <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-emerald-100 sm:text-base lg:text-lg">
+                        <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-emerald-100">
                             Waste2Value — supporting responsible waste
                             identification, smarter segregation, and a
                             greener future through technology.
                         </p>
                         <div className="mt-6 h-1 w-24 rounded-full bg-emerald-400" />
-                        <p className="mt-5 text-xs font-semibold tracking-[0.2em] text-emerald-200 sm:text-sm">
+                        <p className="mt-5 text-xs font-semibold tracking-[0.2em] text-emerald-200">
                             EVERY SMALL ACTION CAN MAKE A DIFFERENCE
                         </p>
                         <p className="mt-4 text-xs text-emerald-100/70">
