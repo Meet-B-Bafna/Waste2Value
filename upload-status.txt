@@ -1,0 +1,13 @@
+(venv) PS D:\TechPorjectAllFiles 2025\Waste2Value-main> git push origin main
+Everything up-to-date
+(venv) PS D:\TechPorjectAllFiles 2025\Waste2Value-main> git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+        python-model/best (1).pt
+        python-model/yolowaste_best.pt
+        yolo11n.pt
+
+nothing added to commit but untracked files present (use "git add" to track)
