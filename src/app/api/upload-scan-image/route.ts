@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getDataFromJwt } from "@/helpers/jwtData";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { randomUUID } from "crypto";
+import { mkdir, writeFile } from "fs/promises";
+import { NextRequest, NextResponse } from "next/server";
+import path from "path";
+
+import { getDataFromJwt } from "@/helpers/jwtData";
 
 export const runtime = "nodejs";
 

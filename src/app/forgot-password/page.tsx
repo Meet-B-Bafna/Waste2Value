@@ -22,7 +22,7 @@ const Page = () => {
             };
             const response = await axios.post("/api/auth/forgot-password", userData);
             console.log(response);
-            Toast.SuccessshowToast(response.data.message || "Email to reset password sent");
+            Toast.SuccessShowToast(response.data.message || "Email to reset password sent");
         } catch (error: unknown) {
             const Error = error as Error;
             Toast.ErrorShowToast(Error?.response?.data?.error || "Something went wrong");

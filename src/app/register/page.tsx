@@ -5,14 +5,14 @@ import { ClockLoader } from "react-spinners";
 import axios from "axios";
 import {
   ArrowLeft,
+  CheckCircle2,
   Eye,
   EyeOff,
-  Recycle,
-  UserRound,
+  LockKeyhole,
   Mail,
   MapPin,
-  LockKeyhole,
-  CheckCircle2,
+  Recycle,
+  UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";

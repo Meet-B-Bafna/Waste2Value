@@ -1,155 +1,347 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from "@google/generative-ai";
-import { Coins, Scan, X, Camera, MapPin } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Camera, MapPin, RotateCcw, Send } from "lucide-react";
 
-import SpinLoading from "@/components/loading/SpinLoading";
-import Toast from "@/utils/toast";
-
-const safetySettings = [
-    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-];
-
-interface Coupon {
-    id: number;
-    service: string;
-    discount: string;
-    code: string;
-}
-
-const Page: React.FC = () => {
+export default function DumpWastePage() {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
 
-    const [photoData, setPhotoData] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [aiLoading, setAiLoading] = useState(false);
-    const [aiData, setAiData] = useState<string | null>(null);
-    const [claimRewards, setClaimRewards] = useState(false);
-    const [disableCapture, setDisableCapture] = useState(false);
-    const [dumpLoading, setDumpLoading] = useState(false);
+    // Identifies the most recent camera initialization request.
+    const requestRef = useRef(0);
+
+    const [photo, setPhoto] = useState<string | null>(null);
     const [latitude, setLatitude] = useState<number | null>(null);
     const [longitude, setLongitude] = useState<number | null>(null);
-    const [coupons, setCoupons] = useState<Coupon[]>([]);
-    const [disableClaimBtn, setDisableClaimBtn] = useState(false);
-    const [isDryWaste, setIsDryWaste] = useState("");
-    const [claimError, setClaimError] = useState(false);
     const [cameraError, setCameraError] = useState("");
+    const [cameraReady, setCameraReady] = useState(false);
+    const [message, setMessage] = useState("");
+    const [loading, setLoading] = useState(false);
 
-    const searchParams = useSearchParams();
+    // Stop the currently active camera.
+    const stopCamera = useCallback(() => {
+        // Invalidate pending getUserMedia() and play() operations.
+        requestRef.current += 1;
 
-    const recycle = searchParams.get("recycle");
-    const wasteName = searchParams.get("wasteName");
-    const wasteType = searchParams.get("wasteType");
-    const material = searchParams.get("material");
-    const totalwaste = searchParams.get("totalwaste");
-    const dryWaste = searchParams.get("dryWaste");
-
-    useEffect(() => {
-        const generateCouponCode = () => {
-            const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            let code = "";
-
-            for (let i = 0; i < 8; i++) {
-                code += characters.charAt(Math.floor(Math.random() * characters.length));
-            }
-
-            return code;
-        };
-
-        const services = [
-            "Zomato", "Swiggy", "Uber Eats", "Amazon", "Netflix",
-            "Starbucks", "Gym", "Spa", "Movie Theater", "Bookstore",
-        ];
-
-        const generated: Coupon[] = Array.from({ length: 10 }, (_, index) => ({
-            id: index + 1,
-            service: services[Math.floor(Math.random() * services.length)],
-            discount: "Buy one, get one free on any item",
-            code: generateCouponCode(),
-        }));
-
-        setCoupons(generated.slice(0, 1));
-    }, []);
-
-    const stopCamera = () => {
-        streamRef.current?.getTracks().forEach((track) => track.stop());
+        const stream = streamRef.current;
         streamRef.current = null;
 
-        if (videoRef.current) {
-            videoRef.current.srcObject = null;
+        if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
         }
-    };
 
-    const startCamera = async () => {
-        setLoading(true);
+        const video = videoRef.current;
+
+        if (video) {
+            video.pause();
+            video.srcObject = null;
+        }
+
+        setCameraReady(false);
+        setLoading(false);
+    }, []);
+
+    // Start the camera without allowing older requests to interfere.
+    const startCamera = useCallback(async () => {
+        const requestId = ++requestRef.current;
+
         setCameraError("");
+        setCameraReady(false);
+        setLoading(true);
+
+        // Release the previous stream before requesting another.
+        const previousStream = streamRef.current;
+        streamRef.current = null;
+
+        if (previousStream) {
+            previousStream.getTracks().forEach((track) => track.stop());
+        }
+
+        const existingVideo = videoRef.current;
+
+        if (existingVideo) {
+            existingVideo.pause();
+            existingVideo.srcObject = null;
+        }
+
+        let newStream: MediaStream | null = null;
 
         try {
             if (!navigator.mediaDevices?.getUserMedia) {
-                throw new Error("Camera access is not supported by this browser.");
+                throw new Error(
+                    "Camera access is not supported. Use a supported browser on localhost or HTTPS."
+                );
             }
 
-            stopCamera();
+            // "ideal" supports laptop webcams and phones with rear cameras.
+            newStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: { ideal: "environment" },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                },
+                audio: false,
+            });
 
-            let stream: MediaStream;
+            // A newer request may have started while permission was pending.
+            if (requestRef.current !== requestId) {
+                newStream.getTracks().forEach((track) => track.stop());
+                newStream = null;
+                return;
+            }
+
+            const video = videoRef.current;
+
+            if (!video) {
+                newStream.getTracks().forEach((track) => track.stop());
+                newStream = null;
+                throw new Error("Camera preview is not ready. Please retry.");
+            }
+
+            streamRef.current = newStream;
+
+            video.muted = true;
+            video.playsInline = true;
+            video.srcObject = newStream;
+
+            // Wait for the video metadata so its dimensions are available.
+            await new Promise<void>((resolve, reject) => {
+                if (
+                    video.readyState >=
+                    HTMLMediaElement.HAVE_METADATA
+                ) {
+                    resolve();
+                    return;
+                }
+
+                let settled = false;
+
+                const cleanup = () => {
+                    window.clearTimeout(timeout);
+                    video.removeEventListener(
+                        "loadedmetadata",
+                        onMetadata
+                    );
+                    video.removeEventListener("error", onError);
+                };
+
+                const onMetadata = () => {
+                    if (settled) return;
+
+                    settled = true;
+                    cleanup();
+                    resolve();
+                };
+
+                const onError = () => {
+                    if (settled) return;
+
+                    settled = true;
+                    cleanup();
+                    reject(
+                        new Error("The camera video could not be loaded.")
+                    );
+                };
+
+                const timeout = window.setTimeout(() => {
+                    if (settled) return;
+
+                    settled = true;
+                    cleanup();
+                    reject(
+                        new Error(
+                            "The camera started, but the video did not become ready."
+                        )
+                    );
+                }, 10000);
+
+                video.addEventListener("loadedmetadata", onMetadata);
+                video.addEventListener("error", onError);
+            });
+
+            // Check again before starting playback.
+            if (
+                requestRef.current !== requestId ||
+                streamRef.current !== newStream ||
+                videoRef.current !== video ||
+                video.srcObject !== newStream
+            ) {
+                if (streamRef.current === newStream) {
+                    newStream.getTracks().forEach((track) => track.stop());
+                    streamRef.current = null;
+                }
+
+                return;
+            }
 
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    audio: false,
-                    video: {
-                        facingMode: { exact: "environment" },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                    },
-                });
-            } catch (rearCameraError) {
-                console.warn("Exact rear camera unavailable; trying fallback.", rearCameraError);
+                await video.play();
+            } catch (playError) {
+                // Playback can be interrupted when React cleans up an
+                // effect or another request changes the video source.
+                if (
+                    requestRef.current !== requestId ||
+                    streamRef.current !== newStream ||
+                    videoRef.current !== video ||
+                    video.srcObject !== newStream
+                ) {
+                    if (streamRef.current === newStream) {
+                        newStream.getTracks().forEach((track) => track.stop());
+                        streamRef.current = null;
+                    }
 
-                stream = await navigator.mediaDevices.getUserMedia({
-                    audio: false,
-                    video: {
-                        facingMode: { ideal: "environment" },
-                    },
-                });
+                    return;
+                }
+
+                if (
+                    playError instanceof Error &&
+                    playError.name === "AbortError"
+                ) {
+                    // Retry once if this request still owns the video.
+                    await new Promise<void>((resolve) => {
+                        window.requestAnimationFrame(() => resolve());
+                    });
+
+                    if (
+                        requestRef.current !== requestId ||
+                        streamRef.current !== newStream ||
+                        videoRef.current !== video ||
+                        video.srcObject !== newStream
+                    ) {
+                        if (streamRef.current === newStream) {
+                            newStream.getTracks().forEach((track) => track.stop());
+                            streamRef.current = null;
+                        }
+
+                        return;
+                    }
+
+                    await video.play();
+                } else {
+                    throw playError;
+                }
             }
 
-            streamRef.current = stream;
+            // Only the active request may mark the camera as ready.
+            if (
+                requestRef.current !== requestId ||
+                streamRef.current !== newStream ||
+                videoRef.current !== video ||
+                video.srcObject !== newStream
+            ) {
+                if (streamRef.current === newStream) {
+                    newStream.getTracks().forEach((track) => track.stop());
+                    streamRef.current = null;
+                }
 
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                await videoRef.current.play();
-            } else {
-                stream.getTracks().forEach((track) => track.stop());
-                streamRef.current = null;
+                return;
             }
+
+            setCameraReady(true);
+            setCameraError("");
         } catch (error) {
-            console.error("Error accessing camera:", error);
-            setCameraError("Unable to access the camera. Check browser permissions and try again.");
-            Toast.ErrorShowToast("Unable to access the camera.");
-        } finally {
-            setLoading(false);
-        }
-    };
+            // Ignore failures from requests that have already been replaced.
+            if (requestRef.current !== requestId) {
+                if (newStream) {
+                    newStream.getTracks().forEach((track) => track.stop());
+                }
 
+                return;
+            }
+
+            if (newStream) {
+                newStream.getTracks().forEach((track) => track.stop());
+
+                if (streamRef.current === newStream) {
+                    streamRef.current = null;
+                }
+
+                const video = videoRef.current;
+
+                if (video?.srcObject === newStream) {
+                    video.pause();
+                    video.srcObject = null;
+                }
+            }
+
+            setCameraReady(false);
+
+            console.error("Camera error:", error);
+
+            let errorMessage =
+                "Unable to access the camera. Please check browser permissions.";
+
+            if (
+                error instanceof Error &&
+                error.name === "NotAllowedError"
+            ) {
+                errorMessage =
+                    "Camera permission was denied. Allow camera access for localhost and retry.";
+            } else if (
+                error instanceof Error &&
+                error.name === "NotFoundError"
+            ) {
+                errorMessage =
+                    "No camera was found. Connect a camera or upload a photo instead.";
+            } else if (
+                error instanceof Error &&
+                error.name === "NotReadableError"
+            ) {
+                errorMessage =
+                    "The camera may be in use by another application. Close other camera apps and retry.";
+            } else if (
+                error instanceof Error &&
+                error.name === "AbortError"
+            ) {
+                errorMessage =
+                    "Camera playback was interrupted. Please retry the camera.";
+            } else if (error instanceof Error && error.message) {
+                errorMessage = error.message;
+            }
+
+            setCameraError(errorMessage);
+        } finally {
+            if (requestRef.current === requestId) {
+                setLoading(false);
+            }
+        }
+    }, []);
+
+    // Camera lifecycle:
+    // - Starts only when the video element is displayed.
+    // - Stops on navigation and when a photo replaces the video.
+    // - Invalidates pending requests during React Strict Mode cleanup.
     useEffect(() => {
+        if (photo !== null) {
+            return;
+        }
+
         void startCamera();
 
         return () => {
-            streamRef.current?.getTracks().forEach((track) => track.stop());
-            streamRef.current = null;
-        };
-        // Start the camera when the page mounts.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+            requestRef.current += 1;
 
+            const stream = streamRef.current;
+            streamRef.current = null;
+
+            if (stream) {
+                stream.getTracks().forEach((track) => track.stop());
+            }
+
+            const video = videoRef.current;
+
+            if (video) {
+                video.pause();
+                video.srcObject = null;
+            }
+        };
+    }, [photo, startCamera]);
+
+    // Capture location.
     useEffect(() => {
         if (!navigator.geolocation) {
+            setMessage("Geolocation is not supported by this browser.");
             return;
         }
 
@@ -159,485 +351,247 @@ const Page: React.FC = () => {
                 setLongitude(position.coords.longitude);
             },
             (error) => {
-                console.warn("Location unavailable:", error.message);
+                console.warn("Location error:", error.message);
+
+                setMessage(
+                    "Location permission is required to identify the correct municipal office."
+                );
             },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+            {
+                enableHighAccuracy: true,
+                timeout: 15000,
+                maximumAge: 60000,
+            }
         );
     }, []);
 
+    // Capture the photo.
     const capturePhoto = () => {
         const video = videoRef.current;
+        const canvas = canvasRef.current;
 
-        if (!video || !video.videoWidth || !video.videoHeight) {
-            Toast.ErrorShowToast("Camera is not ready. Please try again.");
+        if (
+            !video ||
+            !canvas ||
+            !video.videoWidth ||
+            !video.videoHeight ||
+            !streamRef.current
+        ) {
+            setCameraError("Camera is not ready. Please try again.");
+            setCameraReady(false);
             return;
         }
 
-        const canvas = document.createElement("canvas");
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
 
         const context = canvas.getContext("2d");
 
         if (!context) {
-            Toast.ErrorShowToast("Unable to capture photo.");
+            setCameraError("Unable to capture the photo.");
             return;
         }
 
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        setPhotoData(canvas.toDataURL("image/jpeg", 0.9));
-        setAiData(null);
-        setIsDryWaste("");
-        setDisableCapture(true);
-        setDisableClaimBtn(false);
-        setClaimError(false);
+        setPhoto(canvas.toDataURL("image/jpeg", 0.85));
+        setMessage("");
 
-        // Stop the camera after capture to free the device camera.
+        // Stop the camera and invalidate any pending camera operations.
         stopCamera();
     };
 
-    const getDustBinType = async (imageData: string) => {
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-        if (!apiKey) {
-            throw new Error("Gemini API key is not configured.");
-        }
-
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-pro",
-            safetySettings,
-        });
-
-        const formatMatch = imageData.match(/^data:(image\/[\w+-]+);base64,/);
-
-        if (!formatMatch) {
-            throw new Error("Unsupported image format.");
-        }
-
-        const image = {
-            inlineData: {
-                data: imageData.replace(formatMatch[0], ""),
-                mimeType: formatMatch[1],
-            },
-        };
-
-        const result = await model.generateContent([
-            "Does this look like a dry waste dustbin? Respond with only true or false.",
-            image,
-        ]);
-
-        return result.response.text().trim().toLowerCase();
+    // Retake a photo. The effect starts the camera after React renders
+    // the video element again.
+    const retakePhoto = () => {
+        setPhoto(null);
+        setMessage("");
+        setCameraError("");
     };
 
-    const scanImage = async (imageData: string) => {
-        setAiLoading(true);
-        setAiData(null);
-        setIsDryWaste("");
+    // Submit the community waste report.
+    const submitReport = async () => {
+        if (!photo) {
+            setMessage("Please capture a photo first.");
+            return;
+        }
 
-        try {
-            const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-            if (!apiKey) {
-                throw new Error("Gemini API key is not configured.");
-            }
-
-            const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({
-                model: "gemini-1.5-pro",
-                safetySettings,
-            });
-
-            const formatMatch = imageData.match(/^data:(image\/[\w+-]+);base64,/);
-
-            if (!formatMatch) {
-                throw new Error("Unsupported image format.");
-            }
-
-            const image = {
-                inlineData: {
-                    data: imageData.replace(formatMatch[0], ""),
-                    mimeType: formatMatch[1],
-                },
-            };
-
-            const [binResult, dryWasteResult] = await Promise.all([
-                model.generateContent([
-                    "Does this look like a dustbin? Respond with only yes or no.",
-                    image,
-                ]),
-                getDustBinType(imageData),
-            ]);
-
-            setAiData(binResult.response.text().trim().toLowerCase());
-            setIsDryWaste(dryWasteResult);
-        } catch (error) {
-            console.error("Error scanning image:", error);
-            Toast.ErrorShowToast(
-                error instanceof Error ? error.message : "Error verifying dustbin."
+        if (latitude === null || longitude === null) {
+            setMessage(
+                "Location is unavailable. Please enable location access."
             );
-        } finally {
-            setAiLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        if (photoData) {
-            void scanImage(photoData);
-        }
-        // Scan only when a new photo is captured.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [photoData]);
-
-    const isCorrectDustbin =
-        aiData?.trim().toLowerCase() === "yes" &&
-        (isDryWaste === "true" || isDryWaste === "false") &&
-        (dryWaste?.trim().toLowerCase() === "true" ||
-            dryWaste?.trim().toLowerCase() === "false") &&
-        isDryWaste === dryWaste?.trim().toLowerCase();
-
-    const retakePhoto = async () => {
-        setPhotoData(null);
-        setAiData(null);
-        setIsDryWaste("");
-        setDisableCapture(false);
-        setDisableClaimBtn(false);
-        setClaimError(false);
-        await startCamera();
-    };
-
-    const claimPointsAndCoupon = async () => {
-        if (disableClaimBtn || dumpLoading) return;
-
-        if (!wasteName || !wasteType || !recycle) {
-            Toast.ErrorShowToast("Waste details are missing.");
             return;
         }
 
-        if (!isCorrectDustbin) {
-            Toast.ErrorShowToast("Please verify the correct dustbin first.");
-            return;
-        }
-
-        if (coupons.length === 0) {
-            Toast.ErrorShowToast("Reward details are not ready.");
-            return;
-        }
-
-        setDumpLoading(true);
-        setClaimError(false);
+        setLoading(true);
+        setMessage("");
 
         try {
-            const res = await fetch("/api/add-points", {
+            const response = await fetch("/api/report-waste", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                },
                 credentials: "include",
                 body: JSON.stringify({
-                    wasteNameByAi: wasteName,
-                    wasteType,
+                    photo,
                     latitude,
                     longitude,
-                    isRecyleable: recycle === "true",
-                    wastepoints: recycle === "true" ? 12 : 5,
-                    service: coupons[0].service,
-                    discount: coupons[0].discount,
-                    CouponCode: coupons[0].code,
                 }),
             });
 
-            const data = await res.json();
+            const result = await response.json();
 
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || "Error claiming rewards.");
+            if (!response.ok) {
+                throw new Error(
+                    result.error || "Unable to submit the report."
+                );
             }
 
-            setDisableClaimBtn(true);
-            setClaimRewards(true);
-
-            Toast.SuccessShowToast(
-                `${data.pointsCredited ?? (recycle === "true" ? 12 : 5)} points credited`
+            setMessage(
+                result.message ||
+                    "Your community waste report was submitted successfully."
             );
-
-            console.log("Waste disposal recorded:", data);
         } catch (error) {
-            console.error("Error claiming points:", error);
-            setClaimError(true);
-
-            Toast.ErrorShowToast(
-                error instanceof Error ? error.message : "Error claiming rewards."
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Something went wrong. Please try again."
             );
         } finally {
-            setDumpLoading(false);
+            setLoading(false);
         }
     };
 
     return (
-        <main className="min-h-screen bg-gradient-to-b from-green-50 via-white to-white px-4 pb-28 pt-6">
-            <div className="mx-auto w-full max-w-3xl">
-                <header className="mb-6">
-                    <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-100 text-green-800">
-                            <Camera size={25} />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
-                                Dump Waste
-                            </h1>
-                            <p className="mt-1 text-sm text-gray-500">
-                                Capture the dustbin to verify your disposal.
-                            </p>
-                        </div>
-                    </div>
-                </header>
+        <div className="mx-auto max-w-xl space-y-6 pb-6">
+            <header>
+                <h1 className="text-2xl font-bold text-gray-900">
+                    Community Waste Reporting
+                </h1>
 
-                {/* Camera card */}
-                <section className="mx-auto w-full max-w-xl overflow-hidden rounded-3xl border border-gray-200 bg-white p-3 shadow-lg">
-                    <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-gray-950">
-                        {!photoData && (
-                            <>
-                                <video
-                                    ref={videoRef}
-                                    autoPlay
-                                    muted
-                                    playsInline
-                                    className="absolute inset-0 h-full w-full object-cover"
-                                />
+                <p className="mt-2 text-sm text-gray-600">
+                    Help keep your community clean by reporting waste dumped
+                    in public areas.
+                </p>
+            </header>
 
-                                {loading && (
-                                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
-                                        <SpinLoading />
-                                    </div>
-                                )}
-                            </>
-                        )}
-
-                        {photoData && (
-                            <img
-                                src={photoData}
-                                alt="Captured dustbin"
-                                className="absolute inset-0 h-full w-full object-contain"
+            <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-gray-950">
+                    {photo ? (
+                        <img
+                            src={photo}
+                            alt="Captured waste report"
+                            className="h-full w-full object-contain"
+                        />
+                    ) : (
+                        <>
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                className="h-full w-full object-cover"
                             />
-                        )}
 
-                        {!loading && cameraError && !photoData && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-5 text-center text-white">
-                                <Camera size={36} />
-                                <p className="text-sm">{cameraError}</p>
-                                <button
-                                    type="button"
-                                    onClick={() => void startCamera()}
-                                    className="rounded-xl bg-white px-4 py-2 font-semibold text-gray-900"
-                                >
-                                    Retry camera
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                            {loading && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white">
+                                    <p>Preparing camera...</p>
+                                </div>
+                            )}
 
-                    <div className="px-2 pb-2 pt-4 text-center">
-                        {!photoData ? (
-                            <>
-                                <p className="text-sm text-gray-600">
-                                    Point the rear camera at the waste bin.
-                                </p>
+                            {cameraError && !loading && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-4 text-center text-white">
+                                    <Camera size={32} />
 
-                                <button
-                                    type="button"
-                                    onClick={capturePhoto}
-                                    disabled={loading || Boolean(cameraError)}
-                                    className="mt-4 flex w-full items-center justify-center gap-3 rounded-xl bg-green-700 px-5 py-4 font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    <Scan size={22} />
-                                    Capture & Verify Disposal
-                                </button>
-                            </>
-                        ) : (
-                            <button
-                                type="button"
-                                onClick={() => void retakePhoto()}
-                                disabled={aiLoading}
-                                className="flex w-full items-center justify-center gap-3 rounded-xl border border-green-700 px-5 py-4 font-semibold text-green-800 transition hover:bg-green-50 disabled:opacity-50"
-                            >
-                                <Camera size={22} />
-                                Retake Photo
-                            </button>
-                        )}
+                                    <p className="text-sm">
+                                        {cameraError}
+                                    </p>
 
-                        {latitude !== null && longitude !== null && (
-                            <p className="mt-3 flex items-center justify-center gap-1 text-xs text-gray-500">
-                                <MapPin size={13} />
-                                Location captured
-                            </p>
-                        )}
-                    </div>
-                </section>
+                                    <button
+                                        type="button"
+                                        onClick={() => void startCamera()}
+                                        className="rounded-xl bg-white px-4 py-2 font-semibold text-gray-900"
+                                    >
+                                        Retry camera
+                                    </button>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
 
-                {/* Gemini loading */}
-                {aiLoading && (
-                    <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-black/70">
-                        <div className="flex flex-col items-center gap-4 text-white">
-                            <SpinLoading />
-                            <p className="text-sm">Verifying dustbin with AI...</p>
-                        </div>
-                    </div>
+                <canvas ref={canvasRef} className="hidden" />
+
+                {photo ? (
+                    <button
+                        type="button"
+                        onClick={retakePhoto}
+                        disabled={loading}
+                        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-green-700 px-4 py-3 font-semibold text-green-800 disabled:opacity-50"
+                    >
+                        <RotateCcw size={19} />
+                        Retake Photo
+                    </button>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={capturePhoto}
+                        disabled={!cameraReady || loading || Boolean(cameraError)}
+                        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-green-700 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <Camera size={20} />
+                        Capture Waste Photo
+                    </button>
                 )}
+            </section>
 
-                {/* Verification result */}
-                {!aiLoading && aiData && (
-                    <section className="mx-auto mb-8 mt-6 w-full max-w-xl rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-                        <h2 className="text-xl font-bold text-gray-900">
-                            Disposal Verification
+            <section className="rounded-2xl border border-gray-200 bg-white p-4">
+                <div className="flex items-center gap-3">
+                    <MapPin className="text-green-700" size={24} />
+
+                    <div>
+                        <h2 className="font-semibold text-gray-900">
+                            Report Location
                         </h2>
 
-                        <div className="mt-4 space-y-3 text-sm">
-                            <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
-                                <span className="text-gray-500">Is this a dustbin?</span>
-                                <span className="font-semibold capitalize text-gray-900">
-                                    {aiData}
-                                </span>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
-                                <span className="text-gray-500">Dry waste bin?</span>
-                                <span className="font-semibold capitalize text-gray-900">
-                                    {isDryWaste}
-                                </span>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
-                                <span className="text-gray-500">Recyclable</span>
-                                <span className="font-semibold capitalize text-gray-900">
-                                    {recycle}
-                                </span>
-                            </div>
-
-                            <div>
-                                <p className="text-gray-500">Waste name</p>
-                                <p className="mt-1 font-semibold capitalize text-gray-900">
-                                    {wasteName || "Not specified"}
-                                </p>
-                            </div>
-
-                            <div>
-                                <p className="text-gray-500">Waste type</p>
-                                <p className="mt-1 font-semibold text-gray-900">
-                                    {wasteType || "Not specified"}
-                                </p>
-                            </div>
-
-                            <div>
-                                <p className="text-gray-500">Material</p>
-                                <p className="mt-1 font-semibold text-gray-900">
-                                    {material || "Not specified"}
-                                </p>
-                            </div>
-
-                            <div>
-                                <p className="text-gray-500">Total waste</p>
-                                <p className="mt-1 font-semibold text-gray-900">
-                                    {totalwaste || "Not specified"}
-                                </p>
-                            </div>
-
-                            <div>
-                                <p className="text-gray-500">Expected bin category</p>
-                                <p className="mt-1 font-semibold text-gray-900">
-                                    {dryWaste === "true" ? "Dry waste" : dryWaste === "false" ? "Wet waste" : "Not specified"}
-                                </p>
-                            </div>
-                        </div>
-
-                        {isCorrectDustbin ? (
-                            <button
-                                type="button"
-                                onClick={claimPointsAndCoupon}
-                                disabled={disableClaimBtn || dumpLoading}
-                                className="mt-6 flex w-full items-center justify-center gap-3 rounded-xl bg-green-700 p-4 font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:bg-gray-400"
-                            >
-                                <Coins size={20} />
-                                {dumpLoading
-                                    ? "Processing..."
-                                    : disableClaimBtn
-                                      ? "Rewards Claimed"
-                                      : `Claim ${recycle === "true" ? 12 : 5} Points & Reward`}
-                            </button>
-                        ) : (
-                            <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-center text-sm font-medium text-red-700">
-                                The bin verification did not match the expected waste category. Please retake the photo and try again.
-                            </div>
-                        )}
-
-                        {claimError && (
-                            <button
-                                type="button"
-                                onClick={claimPointsAndCoupon}
-                                disabled={dumpLoading || disableClaimBtn}
-                                className="mt-3 w-full rounded-xl border border-green-700 p-3 font-semibold text-green-800 disabled:opacity-50"
-                            >
-                                Retry Claim
-                            </button>
-                        )}
-                    </section>
-                )}
-
-                {/* Reward modal */}
-                {claimRewards && (
-                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
-                        <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl">
-                            <div className="flex items-center justify-between">
-                                <h2 className="text-xl font-bold text-gray-900">
-                                    Reward Claimed
-                                </h2>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setClaimRewards(false)}
-                                    aria-label="Close reward window"
-                                    className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
-                                >
-                                    <X size={24} />
-                                </button>
-                            </div>
-
-                            <div className="mt-6 text-center">
-                                <p className="text-sm text-gray-500">
-                                    Congratulations! Your disposal has been recorded.
-                                </p>
-
-                                <p className="mt-3 text-3xl font-bold text-green-700">
-                                    +{recycle === "true" ? 12 : 5} points
-                                </p>
-
-                                {coupons.slice(0, 1).map((coupon) => (
-                                    <div key={coupon.id} className="mt-6 rounded-2xl bg-green-50 p-4">
-                                        <p className="text-sm text-gray-600">Your reward</p>
-                                        <p className="mt-1 text-xl font-bold text-gray-900">
-                                            {coupon.service}
-                                        </p>
-                                        <p className="mt-3 text-sm text-gray-600">
-                                            {coupon.discount}
-                                        </p>
-                                        <p className="mt-3 rounded-xl border border-dashed border-green-700 bg-white p-3 font-mono text-lg font-bold tracking-widest text-green-800">
-                                            {coupon.code}
-                                        </p>
-                                    </div>
-                                ))}
-
-                                <button
-                                    type="button"
-                                    onClick={() => setClaimRewards(false)}
-                                    className="mt-6 w-full rounded-xl bg-green-700 px-4 py-3 font-semibold text-white hover:bg-green-800"
-                                >
-                                    Done
-                                </button>
-                            </div>
-                        </div>
+                        <p className="text-sm text-gray-600">
+                            {latitude !== null && longitude !== null
+                                ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+                                : "Waiting for location permission..."}
+                        </p>
                     </div>
-                )}
-            </div>
-        </main>
-    );
-};
+                </div>
+            </section>
 
-export default Page;
+            <button
+                type="button"
+                onClick={submitReport}
+                disabled={
+                    !photo ||
+                    latitude === null ||
+                    longitude === null ||
+                    loading
+                }
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-700 px-4 py-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+                <Send size={19} />
+                {loading ? "Submitting Report..." : "Submit Waste Report"}
+            </button>
+
+            {message && (
+                <div
+                    role="status"
+                    className="rounded-xl bg-gray-100 p-4 text-sm text-gray-800"
+                >
+                    {message}
+                </div>
+            )}
+
+            <p className="text-center text-xs text-gray-500">
+                Your photo and location will help identify the appropriate
+                municipal authority.
+            </p>
+        </div>
+    );
+}

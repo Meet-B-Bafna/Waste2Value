@@ -1,11 +1,10 @@
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
-
-import { JWT_SECRET } from "@/helpers/jwtSecret";
 import { NextRequest, NextResponse } from "next/server";
 
 import { connect } from "@/database/db";
 import { HTTP_STATUS } from "@/enums/enums";
+import { JWT_SECRET } from "@/helpers/jwtSecret";
 import User from "@/models/users.model";
 import { Error } from "@/types/ErrorTypes";
 

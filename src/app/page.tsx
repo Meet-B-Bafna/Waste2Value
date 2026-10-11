@@ -2,22 +2,22 @@
 
 import React, { useEffect, useState } from "react";
 import {
+    ArrowRight,
+    ArrowUpRight,
     Bell,
     CircleCheck,
     CircleX,
     Cloud,
     History,
     Landmark,
-    Recycle,
-    X,
-    MapPin,
-    ScanLine,
-    ArrowRight,
-    ArrowUpRight,
     Leaf,
+    Lightbulb,
+    MapPin,
+    Recycle,
+    ScanLine,
     Sprout,
     Trash2,
-    Lightbulb,
+    X,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";

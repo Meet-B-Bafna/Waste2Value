@@ -3,19 +3,20 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MoonLoader } from "react-spinners";
 import {
-    Leaf,
+    AlertCircle,
     Camera,
+    CheckCircle2,
     ImageUp,
-    ScanLine,
-    Trash2,
+    Leaf,
     Recycle,
+    RefreshCw,
+    ScanLine,
     ShieldCheck,
     Sprout,
-    RefreshCw,
-    CheckCircle2,
-    AlertCircle,
+    Trash2,
 } from "lucide-react";
 import Link from "next/link";
+
 import Toast from "@/utils/toast";
 
 interface WasteDetection {

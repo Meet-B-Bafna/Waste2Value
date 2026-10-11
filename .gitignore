@@ -24,3 +24,6 @@ weights/
 
 # Generated source maps
 public/sw.js.map
+# Local backup copies
+**/*.backup.tsx
+/Waste2Value/

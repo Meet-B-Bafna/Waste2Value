@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { connect } from "@/database/db";
 import { getDataFromJwt } from "@/helpers/jwtData";
 import User from "@/models/users.model";

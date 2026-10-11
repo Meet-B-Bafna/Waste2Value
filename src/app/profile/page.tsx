@@ -3,8 +3,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { Chart, registerables } from "chart.js";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
     ArrowRight,
     Award,
@@ -12,8 +10,8 @@ import {
     Cloud,
     Edit,
     Flame,
-    Leaf,
     Landmark,
+    Leaf,
     LogOut,
     MapPin,
     Recycle,
@@ -22,6 +20,8 @@ import {
     Sparkles,
     Target,
 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import SpinLoading from "@/components/loading/SpinLoading";
 import Toast from "@/utils/toast";
@@ -39,7 +39,7 @@ const Page = () => {
 
     const router = useRouter();
     const chartCanvasRef = useRef<HTMLCanvasElement | null>(null);
-    const chartInstanceRef = useRef<Chart | null>(null);
+    const chartInstanceRef = useRef<Chart<"doughnut", number[], string> | null>(null);
 
     // Fetch profile information
     useEffect(() => {

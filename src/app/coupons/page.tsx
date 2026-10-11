@@ -1,22 +1,22 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
 import {
-    Ticket,
-    History,
-    LockKeyhole,
-    Leaf,
-    ShoppingBag,
-    Utensils,
-    Plane,
-    Gift,
     ArrowRight,
+    CircleHelp,
+    Gift,
+    History,
+    Leaf,
+    LockKeyhole,
+    Plane,
+    ShoppingBag,
     Sparkles,
     Tag,
-    CircleHelp,
+    Ticket,
+    Utensils,
 } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
 
 import banner from "@/assets/banner.jpeg";
 import logo from "@/assets/logo.png";

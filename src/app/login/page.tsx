@@ -1,20 +1,20 @@
 "use client";
 
 import React, { useState } from "react";
+import { ClockLoader } from "react-spinners";
 import axios from "axios";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
+    ArrowRight,
     Eye,
     EyeOff,
     Leaf,
+    LockKeyhole,
+    Mail,
     Recycle,
     ShieldCheck,
-    ArrowRight,
-    Mail,
-    LockKeyhole,
 } from "lucide-react";
-import { ClockLoader } from "react-spinners";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { Error } from "@/types/ErrorTypes";
 import Toast from "@/utils/toast";

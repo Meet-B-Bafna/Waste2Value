@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
+import { NextRequest } from "next/server";
 
 import { JWT_SECRET } from "@/helpers/jwtSecret";
-import { NextRequest } from "next/server";
 type DecodedToken = {
     id: number;
 };
