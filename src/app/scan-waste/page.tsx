@@ -37,6 +37,8 @@ interface WastePrediction {
 const Page: React.FC = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const startIdRef = useRef(0);
 
     const [photoData, setPhotoData] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -45,40 +47,81 @@ const Page: React.FC = () => {
     const [cameraOn, setCameraOn] = useState(false);
     const [cameraError, setCameraError] = useState(false);
 
+    const releaseStream = () => {
+        streamRef.current?.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+    };
+
+    const stopCamera = () => {
+        releaseStream();
+
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
+
+        setCameraOn(false);
+    };
+
     const startCamera = async () => {
+        // Only the most recent call may update state (fixes the Strict Mode race)
+        const myId = ++startIdRef.current;
+
         setLoading(true);
         setCameraError(false);
 
         try {
             if (!navigator.mediaDevices?.getUserMedia) {
-                throw new Error("Camera is not supported by this browser.");
+                throw new Error("Camera needs HTTPS or localhost.");
             }
 
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" },
-            });
+            releaseStream();
+
+            let stream: MediaStream;
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: "environment" } },
+                });
+            } catch {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                });
+            }
+
+            // A newer call (or unmount) replaced this one: discard the stream
+            if (myId !== startIdRef.current) {
+                stream.getTracks().forEach((track) => track.stop());
+                return;
+            }
 
             const video = videoRef.current;
 
-            if (video) {
-                video.srcObject = stream;
-
-                try {
-                    await video.play();
-                    setCameraOn(true);
-                } catch (error) {
-                    stream.getTracks().forEach((track) => track.stop());
-
-                    if (video.srcObject === stream) {
-                        video.srcObject = null;
-                    }
-
-                    throw error;
-                }
-            } else {
+            if (!video) {
                 stream.getTracks().forEach((track) => track.stop());
+                return;
             }
+
+            streamRef.current = stream;
+            video.srcObject = stream;
+
+            try {
+                await video.play();
+            } catch (error) {
+                // AbortError = interrupted by a newer load, not a real failure
+                if (
+                    (error as DOMException).name === "AbortError" ||
+                    myId !== startIdRef.current
+                ) {
+                    return;
+                }
+
+                throw error;
+            }
+
+            if (myId === startIdRef.current) setCameraOn(true);
         } catch (err) {
+            if (myId !== startIdRef.current) return;
+
             setCameraOn(false);
             setCameraError(true);
 
@@ -88,22 +131,8 @@ const Page: React.FC = () => {
 
             console.error("Camera error:", err);
         } finally {
-            setLoading(false);
+            if (myId === startIdRef.current) setLoading(false);
         }
-    };
-
-    const stopCamera = () => {
-        const stream = videoRef.current?.srcObject;
-
-        if (stream instanceof MediaStream) {
-            stream.getTracks().forEach((track) => track.stop());
-        }
-
-        if (videoRef.current) {
-            videoRef.current.srcObject = null;
-        }
-
-        setCameraOn(false);
     };
 
     const capturePhoto = () => {
@@ -129,6 +158,7 @@ const Page: React.FC = () => {
 
         const dataURL = canvas.toDataURL("image/jpeg", 0.92);
 
+        stopCamera();
         setPhotoData(dataURL);
         void scanImage(dataURL);
     };
@@ -156,6 +186,7 @@ const Page: React.FC = () => {
         reader.onload = () => {
             const dataURL = reader.result as string;
 
+            stopCamera();
             setPhotoData(dataURL);
             void scanImage(dataURL);
         };
@@ -291,18 +322,17 @@ const Page: React.FC = () => {
     const resetScan = () => {
         setPhotoData(null);
         setAiData(null);
+        void startCamera();
     };
 
     useEffect(() => {
         void startCamera();
 
         return () => {
-            const stream = videoRef.current?.srcObject;
-
-            if (stream instanceof MediaStream) {
-                stream.getTracks().forEach((track) => track.stop());
-            }
+            startIdRef.current++; // invalidate any in-flight start
+            releaseStream();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (
@@ -421,57 +451,56 @@ const Page: React.FC = () => {
 
                         <div className="p-4">
                             <div className="relative flex min-h-[280px] items-center justify-center overflow-hidden rounded-2xl bg-[#10291d]">
-                                {photoData ? (
+                                {photoData && (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img
                                         src={photoData}
                                         alt="Selected waste for AI analysis"
                                         className="max-h-[500px] w-full object-contain"
                                     />
-                                ) : (
-                                    <>
-                                        <video
-                                            ref={videoRef}
-                                            autoPlay
-                                            muted
-                                            playsInline
-                                            className={`h-full min-h-[280px] max-h-[500px] w-full object-cover ${
-                                                cameraOn ? "" : "hidden"
-                                            }`}
-                                        />
+                                )}
 
-                                        {!cameraOn && (
-                                            <div className="flex flex-col items-center px-6 py-12 text-center text-white">
-                                                <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full border border-white/20 bg-white/10">
-                                                    {loading ? (
-                                                        <MoonLoader
-                                                            color="#ffffff"
-                                                            size={32}
-                                                        />
-                                                    ) : (
-                                                        <ImageUp size={34} />
-                                                    )}
-                                                </div>
-                                                <h3 className="text-lg font-bold">
-                                                    {loading
-                                                        ? "Preparing camera..."
-                                                        : "Ready to scan waste"}
-                                                </h3>
-                                                <p className="mt-2 max-w-xs text-sm leading-6 text-white/70">
-                                                    {cameraError
-                                                        ? "Your camera is unavailable. Upload an image to continue."
-                                                        : "Allow camera access or upload a clear image of the waste item."}
-                                                </p>
-                                            </div>
-                                        )}
+                                {/* Video stays mounted so videoRef is always valid */}
+                                <video
+                                    ref={videoRef}
+                                    autoPlay
+                                    muted
+                                    playsInline
+                                    className={`h-full min-h-[280px] max-h-[500px] w-full object-cover ${
+                                        cameraOn && !photoData ? "" : "hidden"
+                                    }`}
+                                />
 
-                                        {cameraOn && (
-                                            <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur-sm">
-                                                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-                                                CAMERA LIVE
-                                            </div>
-                                        )}
-                                    </>
+                                {!photoData && !cameraOn && (
+                                    <div className="flex flex-col items-center px-6 py-12 text-center text-white">
+                                        <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full border border-white/20 bg-white/10">
+                                            {loading ? (
+                                                <MoonLoader
+                                                    color="#ffffff"
+                                                    size={32}
+                                                />
+                                            ) : (
+                                                <ImageUp size={34} />
+                                            )}
+                                        </div>
+                                        <h3 className="text-lg font-bold">
+                                            {loading
+                                                ? "Preparing camera..."
+                                                : "Ready to scan waste"}
+                                        </h3>
+                                        <p className="mt-2 max-w-xs text-sm leading-6 text-white/70">
+                                            {cameraError
+                                                ? "Your camera is unavailable. Upload an image to continue."
+                                                : "Allow camera access or upload a clear image of the waste item."}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {!photoData && cameraOn && (
+                                    <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur-sm">
+                                        <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+                                        CAMERA LIVE
+                                    </div>
                                 )}
                             </div>
 
@@ -685,19 +714,19 @@ const Page: React.FC = () => {
 
                                     {aiData.total_count > 0 && (
                                         <Link
-                                            href={`/dump-waste?recycle=false&wasteName=${encodeURIComponent(
-                                                aiData.waste_name
-                                            )}&wasteType=${encodeURIComponent(
-                                                aiData.waste_type
-                                            )}&material=${encodeURIComponent(
-                                                aiData.material
-                                            )}&totalwaste=${aiData.total_count}`}
-                                            className="mt-5 flex min-h-14 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-4 text-center font-semibold text-white transition hover:bg-emerald-800"
+                                        href={`/best-out-of-waste?wasteName=${encodeURIComponent(
+                                            aiData.waste_name
+                                        )}&material=${encodeURIComponent(
+                                            aiData.material
+                                        )}&totalwaste=${aiData.total_count}`}
+                                        className="mt-5 flex min-h-14 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-4 text-center font-semibold text-white transition hover:bg-emerald-800"
                                         >
-                                            <Trash2 size={19} />
-                                            Continue to Disposal
-                                        </Link>
-                                    )}
+                                            <Sprout size={19} />
+                                            Explore Reuse Ideas
+                                            </Link>
+                                        )}
+
+                                
                                 </div>
                             ) : (
                                 <div className="flex min-h-[320px] flex-col items-center justify-center text-center">
