@@ -3,9 +3,9 @@ from pathlib import Path
 import json
 
 # Dataset location
-DATASET_PATH = Path(
-    r"D:\Tech Projects 2K26\trashnet-master\data\dataset-resized\dataset-resized"
-)
+# Dataset location — place your dataset inside python-model/dataset/
+BASE_DIR = Path(__file__).resolve().parent
+DATASET_PATH = BASE_DIR / "dataset"
 
 # Output directory
 OUTPUT_PATH = Path(__file__).parent

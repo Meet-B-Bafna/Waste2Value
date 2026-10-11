@@ -18,9 +18,11 @@ public/uploads/
 python-model/test_images/
 
 # YOLO model weights and training outputs
-*.pt
+
 runs/
-weights/
+# Ignore root-level training weights, but allow Python application models
+/weights/
+!/python-model/weights/
 
 # Generated source maps
 public/sw.js.map
