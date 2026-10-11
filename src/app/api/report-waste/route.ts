@@ -8,25 +8,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { connect } from "@/database/db";
 import { getDataFromJwt } from "@/helpers/jwtData";
 import WasteReport from "@/models/wasteReport.model";
-import { municipalOffices } from "@/config/municipalOffices";
+import Municipality from "@/models/municipality.model";
 
 export const runtime = "nodejs";
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
-
-interface GeocodingResponse {
-    status: string;
-    results?: Array<{
-        address_components: Array<{
-            long_name: string;
-            types: string[];
-        }>;
-    }>;
-}
-
-function normalizeLocality(value: string): string {
-    return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
 
 export async function POST(request: NextRequest) {
     let savedFilePath: string | null = null;
@@ -124,117 +110,40 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 3. Identify the locality using Google Maps.
-        const googleMapsKey =
-            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-
-        if (!googleMapsKey) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    error: "The Google Maps location service is not configured.",
-                },
-                { status: 503 }
-            );
-        }
-
-        const geocodeUrl = new URL(
-            "https://maps.googleapis.com/maps/api/geocode/json"
-        );
-
-        geocodeUrl.searchParams.set(
-            "latlng",
-            `${latitude},${longitude}`
-        );
-
-        geocodeUrl.searchParams.set("key", googleMapsKey);
-
-        const geocodeResponse = await fetch(geocodeUrl.toString(), {
-            cache: "no-store",
-        });
-
-        if (!geocodeResponse.ok) {
-            throw new Error("Google Maps location lookup failed.");
-        }
-
-        const geocodeData =
-            (await geocodeResponse.json()) as GeocodingResponse;
-
-        if (
-            geocodeData.status !== "OK" ||
-            !geocodeData.results?.length
-        ) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    error:
-                        "Unable to identify your locality from the GPS coordinates.",
-                },
-                { status: 422 }
-            );
-        }
-
-        const components =
-            geocodeData.results[0].address_components ?? [];
-
-        const getComponent = (type: string) =>
-            components.find((component) =>
-                component.types.includes(type)
-            )?.long_name ?? "";
-
-        const locality =
-            getComponent("locality") ||
-            getComponent("postal_town") ||
-            getComponent("administrative_area_level_3") ||
-            getComponent("administrative_area_level_2");
-
-        if (!locality) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    error:
-                        "Could not determine a reliable locality for this report.",
-                },
-                { status: 422 }
-            );
-        }
-
-        // 4. Find the configured municipal office.
-        // Only offices explicitly configured in municipalOffices are used.
-        const normalizedLocality = normalizeLocality(locality);
-
-        const officeEntry = Object.entries(municipalOffices).find(
-            ([key, office]) => {
-                const normalizedKey = normalizeLocality(key);
-                const normalizedName = normalizeLocality(office.name);
-
-                return (
-                    normalizedKey === normalizedLocality ||
-                    normalizedName.includes(normalizedLocality) ||
-                    (
-                        normalizedLocality === "lonavla" &&
-                        normalizedKey === "lonavala"
-                    )
-                );
-            }
-        );
-
-        if (!officeEntry) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    error: `No municipal office is configured for ${locality}. Please add its verified contact details before submitting reports for this locality.`,
-                },
-                { status: 422 }
-            );
-        }
-
-        const [, municipalOffice] = officeEntry;
-
-        // 5. Connect to MongoDB.
+        // 3. Find the active municipality whose GeoJSON boundary contains this GPS point.
         await connect();
 
-        // 6. Save the image to public/uploads/waste-reports.
+        const municipality = await Municipality.findOne({
+            isActive: true,
+            boundary: {
+                $geoIntersects: {
+                    $geometry: {
+                        type: "Point",
+                        // GeoJSON coordinates must be [longitude, latitude].
+                        coordinates: [longitude, latitude],
+                    },
+                },
+            },
+        }).lean();
+
+        if (!municipality) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error:
+                        "No active municipality boundary matches your current location. This area may not have been added yet.",
+                },
+                { status: 422 }
+            );
+        }
+
+        const locality = municipality.name;
+        const municipalOffice = {
+            name: municipality.officeName,
+            email: municipality.email,
+        };
+
+        // 4. Save the image to public/uploads/waste-reports.
         const extensionByMimeType: Record<string, string> = {
             "image/jpeg": ".jpg",
             "image/png": ".png",
@@ -258,7 +167,7 @@ export async function POST(request: NextRequest) {
 
         const imagePath = `/uploads/waste-reports/${filename}`;
 
-        // 7. Save the report before attempting email delivery.
+        // 5. Save the report before attempting email delivery.
         // This ensures a temporary SMTP failure doesn't discard the report.
         const report = await WasteReport.create({
             userId: new mongoose.Types.ObjectId(rawUserId),
@@ -270,7 +179,7 @@ export async function POST(request: NextRequest) {
             status: "submitted",
         });
 
-        // 8. Notify the municipal office if SMTP is configured.
+        // 6. Notify the matched municipality if SMTP is configured.
         // These variables must be server-only environment variables.
         const smtpHost = process.env.MAIL_HOST;
         const smtpPort = Number(process.env.MAIL_PORT || 465);
@@ -346,7 +255,7 @@ export async function POST(request: NextRequest) {
 
         await report.save();
 
-        // 9. Return JSON in both email-success and email-failure cases.
+        // 7. Return JSON in both email-success and email-failure cases.
         return NextResponse.json(
             {
                 success: true,

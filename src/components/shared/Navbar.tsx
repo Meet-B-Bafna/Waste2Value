@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Home, MapPin, Scan, Ticket, User } from "lucide-react";
+import { Home, Flag, Scan, Ticket, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -45,10 +45,10 @@ const Navbar = () => {
                             <span className={labelClass}>Home</span>
                         </Link>
 
-                        {/* Bin Station */}
-                        <Link href="/location" className={navItemClass("/location")}>
-                            <MapPin size={23} strokeWidth={isActive("/location") ? 2.2 : 1.8} />
-                            <span className={labelClass}>Bin Station</span>
+                        {/* Report Waste */}
+                        <Link href="/report-waste" className={navItemClass("/report-waste")}>
+                            <Flag size={23} strokeWidth={isActive("/report-waste") ? 2.2 : 1.8} />
+                            <span className={labelClass}>Report</span>
                         </Link>
 
                         {/* Center Scan Button */}
